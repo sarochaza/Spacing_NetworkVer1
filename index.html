@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Spacetime Networking V5 - Presentation Edition</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { background-color: #050810; color: #E2E8F0; font-family: 'Inter', sans-serif; overflow-x: hidden; }
+        .glass-panel { background: rgba(15, 23, 42, 0.8); backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 1rem; box-shadow: 0 4px 30px rgba(0, 0, 0, 0.5); }
+        .term-panel { background-color: #000000; border: 1px solid #1e293b; border-radius: 0.75rem; display: flex; flex-direction: column; }
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 10px; }
+        input[type=range] { accent-color: #6366f1; }
+        
+        /* Animations */
+        @keyframes dash { to { stroke-dashoffset: -20; } }
+        .link-active { stroke: #10b981; stroke-dasharray: 5; animation: dash 1s linear infinite; }
+        .link-inactive { stroke: #ef4444; stroke-dasharray: 5; opacity: 0.3; }
+        .node-glow { box-shadow: 0 0 20px currentColor; }
+        .trace-step { transition: all 0.3s ease; }
+        .trace-active { color: #10b981; font-weight: bold; text-shadow: 0 0 10px rgba(16,185,129,0.5); border-color: #10b981; background: rgba(16,185,129,0.1); }
+    </style>
+</head>
+<body class="p-4 md:p-6 min-h-screen flex flex-col gap-4">
+
+    <div class="grid grid-cols-1 xl:grid-cols-4 gap-4">
+        
+        <div class="glass-panel p-5 xl:col-span-2 flex flex-col justify-center items-center relative min-h-[180px]">
+            <div class="absolute top-4 left-5">
+                <h1 class="text-xl font-black text-white tracking-wide">TS-COM NETWORK</h1>
+                <p class="text-[10px] text-slate-400 font-bold uppercase mt-1">Spacetime Architecture V5</p>
+            </div>
+            <div class="absolute top-4 right-5 flex items-center gap-2">
+                <span id="conn-status" class="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse"></span>
+            </div>
+
+            <div class="flex items-center justify-between w-full max-w-md mt-8">
+                <div class="text-center text-yellow-400 flex flex-col items-center gap-2">
+                    <div class="w-12 h-12 rounded-full bg-yellow-900/40 border-2 border-yellow-400 flex items-center justify-center node-glow text-lg">🛰️</div>
+                    <span class="text-[10px] font-bold tracking-widest">SC-ALPHA</span>
+                </div>
+                <svg class="flex-grow h-2 mx-2" preserveAspectRatio="none"><line x1="0" y1="4" x2="100%" y2="4" stroke-width="2" class="link-active" /></svg>
+                <div class="text-center text-fuchsia-400 flex flex-col items-center gap-2 relative">
+                    <div class="w-14 h-14 rounded-lg bg-fuchsia-900/40 border-2 border-fuchsia-400 flex items-center justify-center node-glow text-xl">📡</div>
+                    <span class="text-[10px] font-bold tracking-widest">RELAY-01</span>
+                </div>
+                <svg class="flex-grow h-2 mx-2" preserveAspectRatio="none"><line id="topo-link" x1="0" y1="4" x2="100%" y2="4" stroke-width="2" class="link-inactive" /></svg>
+                <div class="text-center text-emerald-400 flex flex-col items-center gap-2">
+                    <div class="w-12 h-12 rounded-full bg-emerald-900/40 border-2 border-emerald-400 flex items-center justify-center node-glow text-lg">🌍</div>
+                    <span class="text-[10px] font-bold tracking-widest">GROUND</span>
+                </div>
+            </div>
+            <p id="topo-status" class="text-[11px] font-bold text-red-500 mt-5 tracking-widest">WINDOW CLOSED</p>
+        </div>
+
+        <div class="glass-panel p-5 flex flex-col">
+            <p class="text-[10px] text-slate-400 font-bold uppercase mb-3">QoS Preemption Queue</p>
+            <div class="space-y-3 flex-grow justify-center flex flex-col">
+                <div>
+                    <div class="flex justify-between text-[10px] mb-1 font-bold text-red-400"><span>P0 (EMERGENCY)</span><span id="q-p0">0</span></div>
+                    <div class="w-full bg-slate-800 rounded-full h-1.5"><div id="bar-p0" class="bg-red-500 h-1.5 rounded-full transition-all" style="width: 0%"></div></div>
+                </div>
+                <div>
+                    <div class="flex justify-between text-[10px] mb-1 font-bold text-yellow-400"><span>P1 (WARNING)</span><span id="q-p1">0</span></div>
+                    <div class="w-full bg-slate-800 rounded-full h-1.5"><div id="bar-p1" class="bg-yellow-500 h-1.5 rounded-full transition-all" style="width: 0%"></div></div>
+                </div>
+                <div>
+                    <div class="flex justify-between text-[10px] mb-1 font-bold text-blue-400"><span>P2 (SCIENCE)</span><span id="q-p2">0</span></div>
+                    <div class="w-full bg-slate-800 rounded-full h-1.5"><div id="bar-p2" class="bg-blue-500 h-1.5 rounded-full transition-all" style="width: 0%"></div></div>
+                </div>
+                <div>
+                    <div class="flex justify-between text-[10px] mb-1 font-bold text-slate-400"><span>P3 (MEDIA)</span><span id="q-p3">0</span></div>
+                    <div class="w-full bg-slate-800 rounded-full h-1.5"><div id="bar-p3" class="bg-slate-500 h-1.5 rounded-full transition-all" style="width: 0%"></div></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="glass-panel p-5 flex flex-col justify-between">
+            <p class="text-[10px] text-slate-400 font-bold uppercase mb-2">Sim Tweaks</p>
+            <div class="space-y-4">
+                <div>
+                    <div class="flex justify-between text-[10px] mb-1"><span class="text-slate-400">Link Loss Rate</span><span id="loss-val" class="text-indigo-400 font-bold">8%</span></div>
+                    <input type="range" id="loss-slider" min="0" max="0.5" step="0.01" value="0.08" class="w-full h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer">
+                </div>
+                <div>
+                    <div class="flex justify-between text-[10px] mb-1"><span class="text-slate-400">Telemetry Speed</span><span id="speed-val" class="text-indigo-400 font-bold">1.0x</span></div>
+                    <input type="range" id="speed-slider" min="0.1" max="2.0" step="0.1" value="1.0" class="w-full h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer">
+                </div>
+            </div>
+            <div class="grid grid-cols-2 gap-2 mt-4">
+                <button onclick="sendCommand('force_emergency')" class="bg-red-600/20 hover:bg-red-600/40 text-red-400 border border-red-600/50 py-2 rounded text-[10px] font-black tracking-wider transition-all shadow-[0_0_10px_rgba(220,38,38,0.2)]">🚨 FORCE P0</button>
+                <button onclick="sendCommand('toggle_window')" class="bg-fuchsia-600/20 hover:bg-fuchsia-600/40 text-fuchsia-400 border border-fuchsia-600/50 py-2 rounded text-[10px] font-black tracking-wider transition-all">🛰️ WINDOW</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 xl:grid-cols-4 gap-4">
+        
+        <div class="glass-panel p-4 xl:col-span-3 flex flex-col justify-center">
+            <div class="flex justify-between items-end mb-3">
+                <p class="text-[10px] text-slate-400 font-bold uppercase">Traceable Delivery Timeline</p>
+                <p class="text-[10px] text-indigo-300 font-mono">LATEST: <span id="trace-id" class="font-bold text-white">WAITING...</span></p>
+            </div>
+            <div class="flex justify-between items-center w-full bg-slate-900/50 p-3 rounded-lg border border-slate-800">
+                <div id="step-CREATED" class="trace-step text-[9px] font-bold text-slate-500 border border-slate-700 px-3 py-1.5 rounded-full">1. CREATED</div>
+                <div class="h-px bg-slate-700 flex-grow mx-1"></div>
+                <div id="step-QUEUED" class="trace-step text-[9px] font-bold text-slate-500 border border-slate-700 px-3 py-1.5 rounded-full">2. QUEUED</div>
+                <div class="h-px bg-slate-700 flex-grow mx-1"></div>
+                <div id="step-SENT" class="trace-step text-[9px] font-bold text-slate-500 border border-slate-700 px-3 py-1.5 rounded-full">3. SENT</div>
+                <div class="h-px bg-slate-700 flex-grow mx-1"></div>
+                <div id="step-RELAYED" class="trace-step text-[9px] font-bold text-slate-500 border border-slate-700 px-3 py-1.5 rounded-full">4. RELAYED</div>
+                <div class="h-px bg-slate-700 flex-grow mx-1"></div>
+                <div id="step-DELIVERED" class="trace-step text-[9px] font-bold text-slate-500 border border-slate-700 px-3 py-1.5 rounded-full">5. DELIVERED</div>
+                <div class="h-px bg-slate-700 flex-grow mx-1"></div>
+                <div id="step-ACKED" class="trace-step text-[9px] font-bold text-slate-500 border border-slate-700 px-3 py-1.5 rounded-full">6. ACKED</div>
+            </div>
+        </div>
+
+        <div class="glass-panel p-4 flex flex-col justify-center items-center bg-teal-900/10 border-teal-500/20">
+            <p class="text-[10px] text-teal-400 font-bold uppercase tracking-widest">End-to-End Latency</p>
+            <p id="ui-latency" class="text-3xl font-black mt-2 text-teal-300 drop-shadow-[0_0_10px_rgba(45,212,191,0.5)]">0.000s</p>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 flex-grow">
+        <div class="term-panel h-[320px]">
+            <div class="bg-slate-900 px-3 py-1.5 border-b border-slate-800 flex justify-between items-center rounded-t-xl">
+                <span class="text-[10px] text-yellow-400 font-mono font-bold">~/sc-alpha/sensor.log</span>
+                <span class="text-[9px] text-slate-500">Node: Spacecraft</span>
+            </div>
+            <div id="log-sensor" class="p-2 overflow-y-auto flex-grow font-mono text-[10px] leading-relaxed space-y-1"></div>
+        </div>
+
+        <div class="term-panel h-[320px]">
+            <div class="bg-slate-900 px-3 py-1.5 border-b border-slate-800 flex justify-between items-center rounded-t-xl">
+                <span class="text-[10px] text-fuchsia-400 font-mono font-bold">~/sat-leo/relay.log</span>
+                <span class="text-[9px] text-slate-500">Node: Satellite</span>
+            </div>
+            <div id="log-relay" class="p-2 overflow-y-auto flex-grow font-mono text-[10px] leading-relaxed space-y-1"></div>
+        </div>
+
+        <div class="term-panel h-[320px]">
+            <div class="bg-slate-900 px-3 py-1.5 border-b border-slate-800 flex justify-between items-center rounded-t-xl">
+                <span class="text-[10px] text-emerald-400 font-mono font-bold">~/ground/station.log</span>
+                <span class="text-[9px] text-slate-500">Node: Earth</span>
+            </div>
+            <div id="log-ground" class="p-2 overflow-y-auto flex-grow font-mono text-[10px] leading-relaxed space-y-1"></div>
+        </div>
+    </div>
+
+    <script>
+        // Smart Append Logic
+        function smartAppend(containerId, htmlMsg) {
+            const el = document.getElementById(containerId);
+            const isScrolledToBottom = el.scrollHeight - el.clientHeight <= el.scrollTop + 20;
+            const div = document.createElement('div');
+            div.innerHTML = htmlMsg;
+            el.appendChild(div);
+            if(el.childElementCount > 60) el.removeChild(el.firstChild);
+            if (isScrolledToBottom) el.scrollTop = el.scrollHeight;
+        }
+
+        function appendLog(prefix, msg) {
+            const timeStr = new Date().toLocaleTimeString('en-US',{hour12:false});
+            let color = "text-slate-300"; let targetDiv = "log-sensor";
+
+            if(prefix === "SENSOR") { color = "text-yellow-400"; targetDiv = "log-sensor"; }
+            else if(prefix === "RELAY" || prefix === "WINDOW") { color = "text-fuchsia-400"; targetDiv = "log-relay"; }
+            else if(prefix === "GROUND" || prefix === "TIMELINE") { color = "text-emerald-400"; targetDiv = "log-ground"; }
+            else if(prefix === "COMMAND") { color = "text-rose-400"; targetDiv = "log-relay"; }
+
+            const html = `<span class="text-slate-600">[${timeStr}]</span> <span class="${color} font-bold">[${prefix}]</span> <span class="text-slate-300">${msg}</span>`;
+            smartAppend(targetDiv, html);
+        }
+
+        function updateTimeline(traceData) {
+            if(!traceData || !traceData.id) return;
+            document.getElementById('trace-id').textContent = traceData.id;
+            
+            const allSteps = ['CREATED', 'QUEUED', 'SENT', 'RELAYED', 'DELIVERED', 'ACKED'];
+            const completedSteps = traceData.stages.map(s => s.stage);
+
+            allSteps.forEach(step => {
+                const el = document.getElementById('step-' + step);
+                if(completedSteps.includes(step)) {
+                    el.classList.add('trace-active');
+                    el.classList.remove('text-slate-500', 'border-slate-700');
+                } else {
+                    el.classList.remove('trace-active');
+                    el.classList.add('text-slate-500', 'border-slate-700');
+                }
+            });
+        }
+
+        let ws;
+        function connect() {
+            ws = new WebSocket(`ws://${window.location.host}/ws`);
+            ws.onopen = () => { document.getElementById('conn-status').className = "w-2.5 h-2.5 rounded-full bg-green-500 shadow-[0_0_8px_#22c55e]"; };
+            ws.onmessage = (e) => {
+                const d = JSON.parse(e.data);
+                
+                // Topology Update
+                const link = document.getElementById('topo-link');
+                const status = document.getElementById('topo-status');
+                if(d.relay.window_open) {
+                    link.className.baseVal = "link-active";
+                    status.textContent = "WINDOW OPEN ✅";
+                    status.className = "text-[11px] font-bold text-emerald-400 mt-5 tracking-widest drop-shadow-[0_0_5px_rgba(52,211,153,0.5)]";
+                } else {
+                    link.className.baseVal = "link-inactive";
+                    status.textContent = "WINDOW CLOSED ❌";
+                    status.className = "text-[11px] font-bold text-red-500 mt-5 tracking-widest";
+                }
+
+                // QoS Breakdown Bars
+                const totalQ = d.relay.queue_size || 1; // prevent div by zero
+                document.getElementById('q-p0').textContent = d.relay.qos.P0;
+                document.getElementById('bar-p0').style.width = (d.relay.qos.P0 / totalQ * 100) + '%';
+                
+                document.getElementById('q-p1').textContent = d.relay.qos.P1;
+                document.getElementById('bar-p1').style.width = (d.relay.qos.P1 / totalQ * 100) + '%';
+                
+                document.getElementById('q-p2').textContent = d.relay.qos.P2;
+                document.getElementById('bar-p2').style.width = (d.relay.qos.P2 / totalQ * 100) + '%';
+                
+                document.getElementById('q-p3').textContent = d.relay.qos.P3;
+                document.getElementById('bar-p3').style.width = (d.relay.qos.P3 / totalQ * 100) + '%';
+
+                // Latency & Trace
+                document.getElementById('ui-latency').textContent = d.ground.avg_latency.toFixed(4) + 's';
+                updateTimeline(d.ground.latest_trace);
+
+                // Logs
+                d.new_logs.forEach(l => appendLog(l.prefix, l.msg));
+            };
+            ws.onclose = () => { document.getElementById('conn-status').className = "w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse"; setTimeout(connect, 2000); };
+        }
+        connect();
+
+        function sendCommand(action) { ws.send(JSON.stringify({ action })); }
+
+        document.getElementById('loss-slider').addEventListener('input', (e) => {
+            const val = parseFloat(e.target.value);
+            document.getElementById('loss-val').textContent = Math.round(val * 100) + '%';
+            ws.send(JSON.stringify({ action: "set_loss_rate", value: val }));
+        });
+
+        document.getElementById('speed-slider').addEventListener('input', (e) => {
+            const val = parseFloat(e.target.value);
+            document.getElementById('speed-val').textContent = val.toFixed(1) + 'x';
+            ws.send(JSON.stringify({ action: "set_speed", value: val }));
+        });
+    </script>
+</body>
+</html>
