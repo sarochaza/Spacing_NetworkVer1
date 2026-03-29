@@ -5,36 +5,31 @@ import threading
 import random
 import uuid
 import argparse
+import logging
+import re
 from queue import PriorityQueue, Empty
 from collections import defaultdict, deque
 
 # =========================================================
 # SPACETIME NETWORKING DELUXE MOCKUP
-# One-file runnable demo:
-#   python spacetime_deluxe.py ground
-#   python spacetime_deluxe.py relay
-#   python spacetime_deluxe.py sensor --spacecraft SC-ALPHA
-#
-# Features:
-# - Mission QoS priority queue
-# - Store-and-forward
-# - Contact window open/close
-# - Self-healing contact scheduling
-# - End-to-end latency metrics
-# - Retries / packet loss simulation
-# - ACK flow
-# - Traceable timeline:
-#   CREATED -> QUEUED -> SENT -> RELAYED -> DELIVERED -> ACKED
-# - Pretty terminal output (ANSI, no external libs)
 # =========================================================
 
 HOST_GROUND = "127.0.0.1"
 PORT_GROUND = 5000
 
 HOST_RELAY_UDP = "127.0.0.1"
-PORT_RELAY_UDP = 5001
+PORT_RELAY_UDP = 5011
 
 RELAY_ID = "SAT-LEO-01"
+
+# -------------------------
+# Logging Configuration
+# -------------------------
+logging.basicConfig(
+    filename="network_log.txt",
+    level=logging.INFO,
+    format="%(asctime)s - %(message)s"
+)
 
 # -------------------------
 # ANSI colors
@@ -66,6 +61,11 @@ def now_ts():
 def iso_now():
     return time.strftime("%H:%M:%S")
 
+def get_tick_icon(tick: int) -> str:
+    if not tick: return "⚪"
+    icons = ["🔴", "🟠", "🟡", "🟢", "🔵", "🟣"]
+    return icons[tick % len(icons)]
+
 def color_for_state(state: str) -> str:
     return {
         "nominal": GREEN,
@@ -90,7 +90,12 @@ def banner(title: str, color=BG_BLUE):
 
 def log(prefix: str, message: str, color=WHITE):
     with LOCK:
+        # พิมพ์ลง Terminal
         print(f"{DIM}[{iso_now()}]{RESET} {color}{BOLD}{prefix}{RESET} {message}")
+        
+        # ลบ ANSI Color Codes ออกก่อนเขียนลงไฟล์ text เพื่อให้อ่านง่าย
+        clean_msg = re.sub(r'\x1b\[[0-9;]*m', '', message) if '\x1b' in message else message
+        logging.info(f"[{prefix}] {clean_msg}")
 
 def safe_json_send(sock: socket.socket, obj: dict):
     data = (json.dumps(obj) + "\n").encode("utf-8")
@@ -101,14 +106,6 @@ def safe_json_send(sock: socket.socket, obj: dict):
 # =========================================================
 
 class MissionQoSEngine:
-    """
-    Mission-aware priority design:
-    P0 = emergency / command
-    P1 = warning / navigation / health telemetry
-    P2 = science data
-    P3 = media / images
-    """
-
     def classify(self, telemetry: dict) -> tuple[int, str]:
         state = telemetry["state"]
         msg_type = telemetry.get("msg_type", "telemetry")
@@ -162,12 +159,20 @@ class GroundStation:
         }
         self.timeline_store = {}
         self.running = True
+        self.received_count = 0        # -- ตัวนับจำนวน packet ที่ “รับเข้ามา”
+        self.start_time = time.time()  # -- เก็บ เวลาที่เริ่มต้นระบบ
+
+    def get_throughput(self):
+        # คำนวณความเร็วในการส่ง/ประมวลผล packet ต่อวินาที
+        elapsed = time.time() - self.start_time
+        if elapsed == 0:
+            return 0
+        return self.metrics["delivered"] / elapsed
 
     def process_queue(self):
         banner("GROUND STATION PROCESSOR", BG_GREEN)
         while self.running:
             try:
-                # แก้ไข: เพิ่มการรับค่า _ (ตัวตัดเชือก) จากคิว
                 neg_priority, _, packet = self.queue.get(timeout=0.5)
             except Empty:
                 continue
@@ -195,6 +200,8 @@ class GroundStation:
                 self.metrics["warnings"] += 1
             if state == "emergency":
                 self.metrics["emergencies"] += 1
+                # -- Alert ตอน Emergency
+                log("ALERT", f"🚨 EMERGENCY DETECTED from {sc_id}", RED)
 
             start_time = raw.get("timestamp")
             latency_txt = "N/A"
@@ -205,10 +212,11 @@ class GroundStation:
                 status = f"{GREEN}PASS{RESET}" if latency < 0.5 else f"{YELLOW}WARN{RESET}"
                 latency_txt = f"{latency:.4f}s ({status})"
 
+            tick_val = raw.get("tick")
             log(
                 "GROUND",
-                f"✔ DELIVERED {bundle_id} | from={sc_id} via={relay_id} "
-                f"| state={state.upper()} | qos={pri_label(priority)} | latency={latency_txt}",
+                f"✔ DELIVERED {get_tick_icon(tick_val)} {bundle_id} | from={sc_id} via={relay_id} "
+                f"| state={state.upper():<9} | qos={pri_label(priority)} | latency={latency_txt}",
                 color_for_state(state),
             )
 
@@ -226,6 +234,10 @@ class GroundStation:
             print(f"{BOLD}Warnings:{RESET}  {self.metrics['warnings']}")
             print(f"{BOLD}Emergencies:{RESET} {self.metrics['emergencies']}")
             print(f"{BOLD}Avg Latency:{RESET} {avg:.4f}s")
+            
+            # -- วัดอัตราการประมวลผลของระบบ
+            tp = self.get_throughput()
+            print(f"{BOLD}Throughput:{RESET}  {tp:.2f} pkt/s")
             print("-" * 48)
 
 def handle_ground_client(conn: socket.socket, addr, gs: GroundStation):
@@ -268,7 +280,6 @@ def handle_ground_client(conn: socket.socket, addr, gs: GroundStation):
                         "ts": now_ts(),
                         "node": msg.get("relay_id", "UNKNOWN"),
                     })
-                    # แก้ไข: แทรก now_ts() ลงไปเพื่อใช้เป็น Tie-breaker เวลาเจอลำดับความสำคัญเท่ากัน
                     gs.queue.put((-priority, now_ts(), msg))
                     gs.metrics["received"] += 1
 
@@ -347,11 +358,6 @@ class SatelliteRelayNode:
         log("RELAY", f"Ground response: {resp}", GREEN)
 
     def self_heal_window(self):
-        """
-        Dynamic schedule:
-        - if queue backlog is high, open window a bit longer
-        - if queue almost empty, return to normal
-        """
         qsize = self.forward_queue.qsize()
 
         if qsize > 12:
@@ -388,6 +394,11 @@ class SatelliteRelayNode:
             "node": self.relay_id,
         })
         self.forward_queue.put((-bundle["priority"], now_ts(), bundle))
+        
+        # -- Queue Warning
+        if self.forward_queue.qsize() > 15:
+            log("RELAY", "⚠ HIGH QUEUE CONGESTION", YELLOW)
+            
         self.metrics["stored"] += 1
 
     def flush_queue_if_possible(self):
@@ -454,6 +465,19 @@ class SatelliteRelayNode:
             print(f"{BOLD}Stored:{RESET}            {self.metrics['stored']}")
             print(f"{BOLD}Forwarded:{RESET}         {self.metrics['forwarded']}")
             print(f"{BOLD}Sim Dropped:{RESET}       {self.metrics['dropped_simulated']}")
+            
+            # -- Drop Rate แสดงผล 
+            if self.metrics["forwarded"] > 0:
+                # -- อัตราการสูญหายของ packet ต่อการส่งทั้งหมด (แปลงเป็น %)
+                drop_rate = self.metrics["dropped_simulated"] / self.metrics["forwarded"]
+                if drop_rate > 0.3:
+                    color = RED
+                elif drop_rate > 0.1:
+                    color = YELLOW
+                else:
+                    color = GREEN
+                print(f"{BOLD}Drop Rate:{RESET}         {color}{drop_rate*100:.2f}%{RESET}")
+                
             print(f"{BOLD}Retried:{RESET}           {self.metrics['retried']}")
             print(f"{BOLD}Window Switches:{RESET}   {self.metrics['window_switches']}")
             print(f"{BOLD}Window State:{RESET}      {'OPEN' if self.window_open else 'CLOSED'}")
@@ -473,6 +497,10 @@ class SatelliteRelayNode:
                     data, _ = self.udp_sock.recvfrom(4096)
                     telemetry = json.loads(data.decode("utf-8"))
                     bundle = self.qos.to_bundle(telemetry)
+                    
+                    tick_val = telemetry.get('tick')
+                    log("RELAY", f"↓ RECV {get_tick_icon(tick_val)} tick={tick_val:<4} | from={telemetry.get('spacecraft_id')} | qos={pri_label(bundle['priority'])}", CYAN)
+
                     self.enqueue_packet(bundle)
 
                     state = telemetry["state"]
@@ -518,7 +546,6 @@ class SpacecraftSensor:
         self.metrics = defaultdict(int)
 
     def make_telemetry(self) -> dict:
-        # weighted random states
         states = ["nominal", "warning", "emergency", "science", "media"]
         weights = [0.45, 0.22, 0.10, 0.15, 0.08]
         chosen = random.choices(states, weights=weights)[0]
@@ -547,7 +574,6 @@ class SpacecraftSensor:
             "timestamp": now_ts(),
         }
 
-        # force warning/emergency by thresholds sometimes
         if temp > 80:
             telemetry["state"] = "emergency"
         elif temp > 65:
@@ -573,7 +599,6 @@ class SpacecraftSensor:
             while True:
                 telemetry = self.make_telemetry()
 
-                # metrics by original content type feeling
                 original_state = telemetry["msg_type"]
                 if original_state == "science":
                     self.metrics["science"] += 1
@@ -586,9 +611,10 @@ class SpacecraftSensor:
 
                 state = telemetry["state"]
                 msg_type = telemetry["msg_type"]
+                
                 log(
                     "SENSOR",
-                    f"↑ SEND tick={self.tick} | type={msg_type.upper()} | state={state.upper()} "
+                    f"↑ SEND {get_tick_icon(self.tick)} tick={self.tick:<4} | type={msg_type.upper():<9} | state={state.upper():<9} "
                     f"| temp={telemetry['temperature_c']}C | volt={telemetry['bus_voltage_v']}V "
                     f"| size={telemetry['payload_size']}B",
                     color_for_state(state),
@@ -596,7 +622,6 @@ class SpacecraftSensor:
 
                 self.tick += 1
 
-                # variable send interval for realism
                 time.sleep(random.uniform(0.8, 2.2))
 
         except KeyboardInterrupt:
