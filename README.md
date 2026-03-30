@@ -66,7 +66,7 @@ Requirements:
    - Uvicorn (pip install uvicorn)  
 
 ---
-###การรันระบบแบบรวมศูนย์ (All-in-One + Dashboard):
+### การรันระบบแบบรวมศูนย์ (All-in-One + Dashboard):
 รันเซิร์ฟเวอร์ผ่านไฟล์ server.py
 ```text
    python server.py
