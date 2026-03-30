@@ -71,5 +71,7 @@ Requirements:
 ```text
    python server.py
 ```
+เปิดเบราว์เซอร์ไปที่: http://127.0.0.1:8000   
+ระบบจะทำการเปิด GroundStation, SatelliteRelay, และ SpacecraftSensor ให้ทำงานพร้อมกันเป็น Thread อัตโนมัติ
 
 
