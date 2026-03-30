@@ -17,3 +17,10 @@
 
 
 ธนกร ทองศรี 673380040-2
+
+### 🛠️ Technical Overview
+จากไฟล์ในโปรเจกต์ ระบบประกอบด้วยส่วนสำคัญดังนี้:
+* **Server-Side:** พัฒนาด้วย Python (`server.py`) รองรับการเชื่อมต่อผ่าน Network
+* **Data Processing:** ใช้ `spacetime_deluxe.py` ในการจัดการโครงสร้างข้อมูลหรือการคำนวณ
+* **Monitoring:** มีระบบบันทึก Log การทำงานไว้ที่ `network_log.txt`
+* **Web Interface:** แสดงผลเบื้องต้นผ่าน `index.html`
