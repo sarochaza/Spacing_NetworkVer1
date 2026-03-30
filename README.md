@@ -1,48 +1,75 @@
-#Project: Spacetime Networking — Spacecraft-to-Satellite Communication Network (TS-Com)
-โดเมน: Computer Networks / Space Networking
- ธีม: สื่อสารในอวกาศ (หน่วงสูง + สัญญาณขาดช่วง + bandwidth จำกัด)
-----
+# 🚀 Project: Spacetime Networking (TS-Com)
+**Spacecraft-to-Satellite Communication Network**
 
- สมาชิกกลุ่ม
-กัญญาวี ศรีเหรา 673380026-6
+**โดเมน:** Computer Networks / Space Networking  
+**ธีม:** การสื่อสารในอวกาศ (หน่วงสูง + สัญญาณขาดช่วง + Bandwidth จำกัด)
 
+---
 
-รสริน เมืองหงษ์ 673380289-4
+## 👥 สมาชิกผู้จัดทำ
+| ลำดับ | ชื่อ-นามสกุล | รหัสนักศึกษา |
+| :---: | :--- | :--- |
+| 1 | กัญญาวี ศรีเหรา | 673380026-6 |
+| 2 | รสริน เมืองหงษ์ | 673380289-4 |
+| 3 | สโรชา เสาทอง | 673380296-7 |
+| 4 | ปวิศร์ แพงมา | 673380047-8 |
+| 5 | ธนกร ทองศรี | 673380040-2 |
 
+---
 
-สโรชา เสาทอง 673380296-7
+## 🌌 ภาพรวมสถาปัตยกรรม (System Architecture)
 
-
-ปวิศร์ แพงมา 673380047-8
-
-
-ธนกร ทองศรี 673380040-2
-
-## 🏗️ Network Topology: Hybrid Mesh-Tree
-
-สถาปัตยกรรมเครือข่ายของระบบถูกออกแบบในลักษณะ **Hybrid Mesh-Tree Topology** เพื่อรับมือกับข้อจำกัดด้านการสื่อสารในอวกาศ (Spacetime Latency & Intermittent Visibility) โดยแบ่งการทำงานออกเป็น 2 ส่วนหลัก:
-
-### 🛰️ แผนผังเครือข่าย (Architecture Diagram)
+ระบบจำลองนี้ถูกออกแบบมาเพื่อแก้ปัญหาคอขวดของการสื่อสารในอวกาศ (Spacetime Latency & Intermittent Visibility) โดยอิงตามแนวคิด **Space DTN (Delay/Disruption-Tolerant Networking)** ประกอบด้วย 3 โหนดหลัก:
 
 ```text
-      [ Ground Station / Internet Gateway ]
-                       ║ (High-Speed Link)
-          ╔════════════╩════════════╗
-    [Summit Alpha] ═══ [Summit Beta] ═══ [Summit Gamma]  <-- Core Layer (Mesh)
-          ║  ╲             ║             ╱  ║
-          ║    ╲           ║           ╱    ║
-    [Relay North] ════ [Relay Center] ════ [Relay East]  <-- Relay Layer (Mesh)
-          │                ║                │
-    [Village A/B]    [Village B/C]    [Village C/D]      <-- Access Layer (Tree)
-          │                ║                │
-   [Sensor Cluster]  [Sensor Cluster]  [Sensor Cluster]  <-- End Devices (Tree)
-    
+  [ SC-ALPHA ] (Spacecraft Sensor)
+       │  (สร้าง Telemetry: Nominal, Science, Emergency)
+       │
+       ▼  UDP (127.0.0.1:5011)
+  [ SAT-LEO-01 ] (Satellite Relay Node)  <-- ทำหน้าที่ Store-and-Forward (DTN)
+       │  (Contact Window & Energy System)
+       │
+       ▼  TCP (127.0.0.1:5000)
+  [ Ground Station ] (Earth)             <-- รับข้อมูล วัด Latency
+       │
+       ▼  HTTP / WebSockets (Port 8000)
+  [ Web Dashboard ] (Presentation UI)
 ```
-🎯 ทำไมต้องเป็น Hybrid Mesh-Tree?
-Core & Relay Layer (โครงสร้างแบบ Mesh): * การเชื่อมต่อ: ระหว่าง Summit และ Relay (ดาวเทียม) จะเชื่อมต่อกันแบบตาข่าย (Mesh)
-เหตุผล: เพื่อสร้าง Redundancy (ความทนทาน) หากดาวเทียมดวงใดดวงหนึ่งลับขอบฟ้า หรือลิงก์ขาดหาย (Window Closed) ข้อมูลจะสามารถหาเส้นทางอื่น (Routing) ส่งกลับมาที่สถานีฐานได้อย่างปลอดภัยโดยไม่มี Single Point of Failure
-Access Layer (โครงสร้างแบบ Tree):
+### 🧠 กลไกการทำงานหลัก (Core Innovations)
+1. Delay/Disruption Tolerance (Store-and-Forward)
+ดาวเทียม (Relay) จะไม่ส่งข้อมูลแบบ stream ต่อเนื่อง แต่จะใช้กลไก Custody Transfer คือการรับก้อนข้อมูล (Bundle) เข้ามาเก็บไว้ใน Persistent Queue ก่อน และจะส่งต่อก็ต่อเมื่อ "หน้าต่างการติดต่อ (Contact Window)" เปิดขึ้นเท่านั้น หากส่งพลาด (Packet Loss) จะมีระบบ Auto-Retry อัตโนมัติ  
+2. Mission QoS (Quality of Service ตามความสำคัญ)
+ข้อมูลไม่ได้ถูกปฏิบัติอย่างเท่าเทียมกัน ในคิวของดาวเทียมจะมีการจัดลำดับความสำคัญ (Priority Queue) ตามชนิดของข้อมูล:  
+🔴 P0 (Emergency): ระดับ 100 - คำสั่งฉุกเฉิน (เช่น อุณหภูมิพุ่งสูง) (ได้สิทธิ์ส่งก่อนเสมอ)  
+🟠 P1 (Warning): ระดับ 60 - แจ้งเตือนสถานะยาน  
+🔵 P2 (Science/Nominal): ระดับ 30/20 - ข้อมูลวิทยาศาสตร์ทั่วไป  
+🟣 P3 (Media): ระดับ 10 - รูปภาพ/วิดีโอ (ส่งเมื่อว่างเท่านั้น)
+3. Contact-Aware & Window Simulation
+อวกาศไม่ใช่ topology ที่เชื่อมต่อกันตลอดเวลา ดาวเทียมจะมีการจำลองสถานะ Window OPEN ✅ และ CLOSED ❌ สลับกันไปตามรอบ หากหน้าต่างปิด ข้อมูลทั้งหมดจะถูกค้างไว้ใน Queue 
 
-การเชื่อมต่อ: จาก Relay ลงไปหา Village และ Sensor (ยานอวกาศ/อุปกรณ์ IoT) จะเชื่อมต่อแบบต้นไม้ (Tree)
+4. Energy Degradation System (ระบบจำลองพลังงาน)
+ดาวเทียมมีพลังงานเริ่มต้น 100% พลังงานจะลดลงเรื่อยๆ ตามจำนวน Packet ที่ค้างใน Queue (ยิ่งเก็บเยอะยิ่งสูบพลังงาน)
+Low Power Mode: หากพลังงานลดลงต่ำกว่า 20% ระบบจะเข้าสู่โหมดประหยัดพลังงานขั้นวิกฤต โดยจะทำการ REJECT ทราฟฟิกอื่นทั้งหมด และรับเฉพาะ P0 (Emergency) เท่านั้น จนกว่าระบบจะฟื้นฟู
 
-เหตุผล: เพื่อความง่ายในการจัดการ IP (Network Segmentation) และการจัดการพลังงาน (Energy-Aware) เนื่องจากเซ็นเซอร์มีพลังงานจำกัด จึงไม่ควรต้องประมวลผลการหาเส้นทางที่ซับซ้อนแบบ Mesh ส่งผลให้ประหยัดพลังงานได้มากขึ้น
+---
+```text
+ts-com-network/
+├── server.py              ← ตัวรันเซิร์ฟเวอร์หลัก (FastAPI) และระบบ Dashboard
+├── spacetime_deluxe.py    ← Core Logic ทั้งหมด (Ground, Relay, Sensor)
+├── index.html             ← UI ของ Web Dashboard
+└── network_log.txt        ← ไฟล์บันทึก Network Log อัตโนมัติ
+```
+## วิธีการติดตั้งและรันระบบ (Quick Start)
+Requirements:   
+   - Python 3.9+  
+   - FastAPI (pip install fastapi)  
+   - Uvicorn (pip install uvicorn)  
+
+---
+###การรันระบบแบบรวมศูนย์ (All-in-One + Dashboard):
+รันเซิร์ฟเวอร์ผ่านไฟล์ server.py
+```text
+   python server.py
+```
+
+
